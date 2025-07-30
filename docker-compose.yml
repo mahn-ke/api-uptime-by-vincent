@@ -1,0 +1,17 @@
+services:
+  api:
+    container_name: backend
+    image: medaziz11/uptimekuma_restapi
+    volumes:
+      - api:/db
+    restart: always
+    environment:
+      - KUMA_SERVER=https://uptime.by.vincent.mahn.ke
+      - KUMA_USERNAME=ViMaSter
+      - KUMA_PASSWORD=xehM-zPgzKo4wQYfL7izwMeMQbYomZ-FM23rkdCHcTSobCn7Kuvng2QViv7fRAKd
+      - ADMIN_PASSWORD=admin
+    ports:
+      - "8000:8000"
+
+volumes:
+  api:
