@@ -5,7 +5,7 @@ param (
 function Generate-NginxConfig {
     param (
         [string]$fqdn,
-        [string]$firstPart,
+        [string]$domainPrefix,
         [string]$firstPort,
         [bool]$WithHttps = $false
     )
@@ -20,7 +20,7 @@ function Generate-NginxConfig {
     $outFile = "output/$fqdn.conf"
     $nginxConfig = Invoke-EpsTemplate -Template $template -Binding @{
         fqdn      = $fqdn
-        firstPart = $firstPart
+        domainPrefix = $domainPrefix
         firstPort = $firstPort
         CERT_HOME = $env:CERT_HOME -replace '\\', '/'
         withHttps = $withHttps
@@ -93,7 +93,8 @@ function Check-EnvVars {
 
 Check-EnvVars
 
-$fqdn = ((Split-Path -Leaf (Get-Location)) -split '-')[0] + '.by.vincent.mahn.ke'
+$domainPrefix = (((Split-Path -Leaf (Get-Location)) -replace '-by-vincent', '') -replace '-', '.')
+$fqdn = $domainPrefix + '.by.vincent.mahn.ke'
 
 $firstPort = Get-FirstHostPort -fqdn $fqdn
 
@@ -102,6 +103,4 @@ if (-not $firstPort) {
     exit 1
 }
 
-$firstPart = $fqdn.Split('.')[0]
-
-Generate-NginxConfig -fqdn $fqdn -firstPart $firstPart -firstPort $firstPort -WithHttps $WithHttps
+Generate-NginxConfig -fqdn $fqdn -domainPrefix $domainPrefix -firstPort $firstPort -WithHttps $WithHttps

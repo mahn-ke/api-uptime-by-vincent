@@ -1,4 +1,4 @@
-$subdomain = ((Split-Path -Leaf (Get-Location)) -split '-')[0]
+$subdomain = (((Split-Path -Leaf (Get-Location)) -replace '-by-vincent', '') -replace '-', '.')
 
 # Ensure directories exist
 $certsPath = Join-Path $env:CERT_HOME "certs"

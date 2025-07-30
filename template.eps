@@ -1,7 +1,7 @@
 <%=
     # Generate a banner comment for section using PowerShell EPS
     $len = 37
-    $label = " $($firstPart.ToUpper()) "
+    $label = " $($domainPrefix.ToUpper()) "
     $hashes = "#" * [Math]::Max(0, $len - $label.Length)
     $left = [Math]::Floor($hashes.Length / 2)
     $right = $hashes.Length - $left
@@ -17,7 +17,7 @@ server {
     }
 
     location ^~ /.well-known/ {
-        alias <%= $CERT_HOME %>/.well-known/<%= $firstPart %>/.well-known/;
+        alias <%= $CERT_HOME %>/.well-known/<%= $domainPrefix %>/.well-known/;
         autoindex on;
     }
 }
