@@ -8,8 +8,8 @@ services:
     restart: always
     environment:
       - KUMA_SERVER=https://uptime.by.vincent.mahn.ke
-      - KUMA_USERNAME=ViMaSter
-      - KUMA_PASSWORD=xehM-zPgzKo4wQYfL7izwMeMQbYomZ-FM23rkdCHcTSobCn7Kuvng2QViv7fRAKd
+      - KUMA_USERNAME=${KUMA_USERNAME}
+      - KUMA_PASSWORD=${KUMA_PASSWORD}
       - ADMIN_PASSWORD=admin
     ports:
       - "8000:8000"
