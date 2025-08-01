@@ -86,6 +86,8 @@ jobs:
           if [ "${{ steps.plan.outputs.exitcode }}" == "0" ]; then
             echo "Configuration files found but no changes; skipping apply"
             exit 0
+          fi
+          
           if grep -q "No configuration files" <<<"${{ steps.plan.outputs.stderr }}"; then
             echo "No configuration files found; skipping apply"
             exit 0
