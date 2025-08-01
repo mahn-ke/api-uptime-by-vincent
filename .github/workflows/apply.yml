@@ -15,14 +15,55 @@ on:
       - main
 
 jobs:
+  prepare-postgres:
+    runs-on: ubuntu-latest
+    outputs:
+      NEWDATABASE: ${{ steps.ensure-db.outputs.NEWDATABASE }}
+    steps: 
+      - name: Ensure database exists
+        id: ensure-db
+        env:
+           PGHOST: ${{ secrets.PGHOST }}
+           PGPORT: ${{ secrets.PGPORT }}
+           PGUSER: ${{ secrets.PGUSER }}
+           PGPASSWORD: ${{ secrets.PGPASSWORD }}
+           PGDATABASE: "postgres"
+        run: |
+          REPO_NAME="$(basename "$GITHUB_REPOSITORY")"
+          NEWDATABASE="$(echo "$REPO_NAME" | sed 's/-by-vincent//' | tr '-' '.')"
+          echo "NEWDATABASE=$NEWDATABASE" >> $GITHUB_OUTPUT
+
+          exists="$(psql -tAc "SELECT 1 FROM pg_database WHERE datname = '$NEWDATABASE'")"
+          if [ "$exists" = "1" ]; then
+            echo "Database '$NEWDATABASE' already exists."
+            exit 0
+          fi
+
+          result=$(createdb "$NEWDATABASE")
+          if [ $? -ne 0 ]; then
+            echo "Failed to create database '$NEWDATABASE'."
+            exit 1
+          fi
+          echo "Database '$NEWDATABASE' created."
+
   terraform-plan:
+    needs: prepare-postgres
     runs-on: ubuntu-latest
     env:
-      ALLINKL_KAS_LOGIN: ${{ secrets.ALLINKL_KAS_LOGIN }}
-      ALLINKL_KAS_AUTH_DATA: ${{ secrets.ALLINKL_KAS_AUTH_DATA }}
+      PGDATABASE: ${{ needs.prepare-postgres.outputs.NEWDATABASE }}
     outputs:
       exitcode: ${{ steps.plan.outputs.exitcode }}
     steps:
+      - name: Expose github environment as shell variables
+        env:
+          SECRETS_CONTEXT: ${{ toJson(secrets) }}
+        run: |
+          # https://docs.github.com/en/actions/using-workflows/workflow-commands-for-github-actions#setting-an-environment-variable
+          # https://docs.github.com/en/actions/using-workflows/workflow-commands-for-github-actions#multiline-strings
+          EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
+          to_envs() { jq -r "to_entries[] | \"\(.key)<<$EOF\n\(.value)\n$EOF\n\""; }
+          echo "$SECRETS_CONTEXT" | to_envs >> $GITHUB_ENV
+          
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -35,12 +76,22 @@ jobs:
 
       - name: terraform plan
         id: plan
+        continue-on-error: true
         run: | 
           terraform plan --out=tfplan --detailed-exitcode
 
-      - name: Check Terraform plan exit code
+      - name: Check if terraform apply is required
         run: |
           echo "exitcode: ${{ steps.plan.outputs.exitcode }}"
+          if [ "${{ steps.plan.outputs.exitcode }}" == "0" ]; then
+            echo "Configuration files found but no changes; skipping apply"
+            exit 0
+          if grep -q "No configuration files" <<<"${{ steps.plan.outputs.stderr }}"; then
+            echo "No configuration files found; skipping apply"
+            exit 0
+          fi
+
+          echo "Configuration files found and changes; running apply"
 
       - name: Upload Terraform plan
         if: steps.plan.outputs.exitcode == 2
@@ -51,13 +102,22 @@ jobs:
 
   terraform-apply:
     runs-on: ubuntu-latest
+    env:
+      PGDATABASE: ${{ needs.prepare-postgres.outputs.NEWDATABASE }}
     environment: production
     needs: [terraform-plan]
     if: needs.terraform-plan.outputs.exitcode == 2
-    env:
-      ALLINKL_KAS_LOGIN: ${{ secrets.ALLINKL_KAS_LOGIN }}
-      ALLINKL_KAS_AUTH_DATA: ${{ secrets.ALLINKL_KAS_AUTH_DATA }}
     steps:
+      - name: Expose github environment as shell variables
+        env:
+          SECRETS_CONTEXT: ${{ toJson(secrets) }}
+        run: |
+          # https://docs.github.com/en/actions/using-workflows/workflow-commands-for-github-actions#setting-an-environment-variable
+          # https://docs.github.com/en/actions/using-workflows/workflow-commands-for-github-actions#multiline-strings
+          EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
+          to_envs() { jq -r "to_entries[] | \"\(.key)<<$EOF\n\(.value)\n$EOF\n\""; }
+          echo "$SECRETS_CONTEXT" | to_envs >> $GITHUB_ENV
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -77,15 +137,24 @@ jobs:
 
   deploy:
     runs-on: hetzner2
-    needs: [terraform-plan, terraform-apply]
-    env:
-      ALLINKL_KAS_LOGIN: ${{ secrets.ALLINKL_KAS_LOGIN }}
-      ALLINKL_KAS_AUTH_DATA: ${{ secrets.ALLINKL_KAS_AUTH_DATA }}
     if: always()
+    needs: [prepare-postgres, terraform-plan, terraform-apply]
     steps:
-      - name: fail if terraform jobs failed
-        if: ${{ needs.terraform-plan.result == 'failure' || needs.terraform-apply.result == 'failure' }}
+      - name: fail if any previous step failed
+        if: needs.prepare-postgres.result == 'failure' || needs.terraform-plan.result == 'failure' || needs.terraform-apply.result == 'failure'
         run: exit 1
+
+      - name: Expose github environment as shell variables
+        env:
+          SECRETS_CONTEXT: ${{ toJson(secrets) }}
+        run: |
+          # https://docs.github.com/en/actions/using-workflows/workflow-commands-for-github-actions#setting-an-environment-variable
+          # https://docs.github.com/en/actions/using-workflows/workflow-commands-for-github-actions#multiline-strings
+          $EOF = [System.Guid]::NewGuid().ToString("N").Substring(0,16)
+          $secrets = $env:SECRETS_CONTEXT | ConvertFrom-Json
+          foreach ($pair in $secrets.PSObject.Properties) {
+            Add-Content -Path $env:GITHUB_ENV -Value "$($pair.Name)<<$EOF`n$($pair.Value)`n$EOF"
+          }
 
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -99,22 +168,6 @@ jobs:
       - name: Run Docker Compose
         run: docker compose up -d
 
-      - name: Generate HTTP-only NGINX configuration
-        run: ./tools/Generate-NginxConfig.ps1
-        shell: pwsh
-
-      - name: Try to apply HTTP-only NGINX configuration
-        run: ./tools/Update-NginxConfig.ps1
-        shell: pwsh
-
-      - name: Generate certificates
-        run: ./tools/Generate-Certificate.ps1
-        shell: pwsh
-
-      - name: Generate HTTP+HTTPS NGINX configuration
-        run: ./tools/Generate-NginxConfig.ps1 -WithHttps
-        shell: pwsh
-
-      - name: Try to apply HTTP+HTTPS NGINX configuration
-        run: ./tools/Update-NginxConfig.ps1
+      - name: Attempt subomain deployment, if required
+        run: ./tools/Deploy.ps1
         shell: pwsh

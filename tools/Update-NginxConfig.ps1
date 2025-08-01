@@ -1,13 +1,21 @@
+param(
+    [Parameter(Mandatory=$true)]
+    [string]$type
+)
+
 $nginxConf = "$env:NGINX_HOME\conf"
 $backupDir = "$nginxConf-backup"
-$vhostOutput = "$(Get-Location)\output"
-$vhostDest = "$nginxConf\vhosts"
+$output = "$(Get-Location)\output"
+$destination = "$nginxConf\$type"
+if ($type -eq "https") {
+    $destination = "$nginxConf\http"
+}
 
 Write-Host "Backing up current NGINX configuration..."
 Copy-Item -Path $nginxConf -Destination $backupDir -Recurse -Force
 
 Write-Host "Generating NGINX configuration:"
-Copy-Item -Path $vhostOutput\* -Destination $vhostDest -Recurse -Force
+Copy-Item -Path $output\* -Destination $destination -Recurse -Force
 
 Write-Host "Reloading NGINX configuration..."
 pushd $env:NGINX_HOME
